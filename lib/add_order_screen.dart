@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'api_service.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'api_service.dart';
 
 class AddOrderScreen extends StatefulWidget {
-
-  final user;
+  final dynamic user;
 
   const AddOrderScreen({super.key, required this.user});
 
@@ -19,7 +18,7 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
   final TextEditingController city = TextEditingController();
 
   /// PRODUCT LIST
-  List<Map<String,dynamic>> orderProducts = [
+  List<Map<String, dynamic>> orderProducts = [
     {
       "product_id": null,
       "product_name": "",
@@ -44,73 +43,84 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
   }
 
   /// ADD PRODUCT ROW
-  addProductRow(){
-
+  void addProductRow() {
     setState(() {
-
       orderProducts.add({
         "product_id": null,
         "product_name": "",
         "qty": TextEditingController()
       });
-
     });
-
   }
 
   /// REMOVE PRODUCT ROW
-  removeProductRow(int index){
+  void removeProductRow(int index) {
 
-    if(orderProducts.length == 1){
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("At least one product required"))
-      );
+    if (orderProducts.length == 1) {
+      _showSnack("At least one product required");
       return;
     }
+
+    orderProducts[index]["qty"].dispose();
 
     setState(() {
       orderProducts.removeAt(index);
     });
+  }
 
+  /// SNACKBAR HELPER
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+  }
+
+  /// VALIDATE MOBILE
+  bool isValidMobile(String number) {
+    return number.length >= 6;
   }
 
   /// CREATE ORDER
-  createOrder() async {
+  Future<void> createOrder() async {
 
-    if(customerName.text.isEmpty ||
-        mobile.text.isEmpty ||
-        city.text.isEmpty){
+    if (loading) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill customer details")),
-      );
+    if (customerName.text.trim().isEmpty ||
+        mobile.text.trim().isEmpty ||
+        city.text.trim().isEmpty) {
 
+      _showSnack("Please fill customer details");
+      return;
+    }
+
+    if (!isValidMobile(mobile.text.trim())) {
+      _showSnack("Invalid mobile number");
       return;
     }
 
     List products = [];
 
-    for(var p in orderProducts){
+    for (var p in orderProducts) {
 
-      if(p["product_id"] == null || p["qty"].text.isEmpty){
+      if (p["product_id"] == null || p["qty"].text.trim().isEmpty) {
+        _showSnack("Please select product and quantity");
+        return;
+      }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Select product and quantity")),
-        );
+      int qty = int.tryParse(p["qty"].text.trim()) ?? 0;
 
+      if (qty <= 0) {
+        _showSnack("Quantity must be greater than 0");
         return;
       }
 
       products.add({
         "product_id": p["product_id"],
-        "quantity": int.parse(p["qty"].text)
+        "quantity": qty
       });
-
     }
 
-    setState(() {
-      loading = true;
-    });
+    setState(() => loading = true);
 
     var data = {
 
@@ -118,63 +128,54 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
       "captain_id": widget.user['captain_id'] ?? 1,
 
-      "customer_name": customerName.text,
+      "customer_name": customerName.text.trim(),
 
-      "mobile": mobile.text,
+      "mobile": mobile.text.trim(),
 
-      "city": city.text,
+      "city": city.text.trim(),
 
       "products": products
 
     };
 
-    print("ORDER DATA:");
-    print(data);
+    debugPrint("ORDER DATA: $data");
 
-    try{
+    try {
 
       var response = await ApiService.createSale(data);
 
-      print("API RESPONSE:");
-      print(response);
+      debugPrint("API RESPONSE: $response");
 
-      if(response != null && response['status'] == true){
+      if (response != null && response['status'] == true) {
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Sale Order Created")),
-        );
+        _showSnack("Sale Order Created");
 
         Navigator.pop(context);
 
-      }else{
+      } else {
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response['message'] ?? "Failed")),
-        );
+        _showSnack(response?['message'] ?? "Failed to create order");
 
       }
 
-    }catch(e){
+    } catch (e) {
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      debugPrint(e.toString());
+      _showSnack("Network error. Please try again");
 
     }
 
-    setState(() {
-      loading = false;
-    });
-
+    setState(() => loading = false);
   }
-  /// PRODUCT ROW UI
-  Widget productRow(int index){
+
+  /// PRODUCT ROW
+  Widget productRow(int index) {
 
     return Card(
 
       elevation: 3,
 
-      margin: const EdgeInsets.only(bottom:10),
+      margin: const EdgeInsets.only(bottom: 10),
 
       child: Padding(
 
@@ -190,9 +191,6 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
               child: TypeAheadFormField(
 
                 textFieldConfiguration: TextFieldConfiguration(
-                  controller: TextEditingController(
-                      text: orderProducts[index]['product_name'] ?? ""
-                  ),
                   decoration: const InputDecoration(
                     labelText: "Search Product",
                     border: OutlineInputBorder(),
@@ -202,33 +200,29 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
                 suggestionsCallback: (pattern) async {
 
-                  if(pattern.length < 2){
-                    return [];
-                  }
+                  if (pattern.length < 2) return [];
 
                   var response = await ApiService.searchProducts(pattern);
 
-                  if(response != null && response['status']==true){
+                  if (response != null && response['status'] == true) {
                     return response['data'];
                   }
 
                   return [];
-
                 },
 
-                itemBuilder: (context, suggestion){
+                itemBuilder: (context, suggestion) {
 
-                  final product = suggestion as Map<String,dynamic>;
+                  final product = suggestion as Map<String, dynamic>;
 
                   return ListTile(
                     title: Text(product['name']),
                   );
-
                 },
 
-                onSuggestionSelected: (suggestion){
+                onSuggestionSelected: (suggestion) {
 
-                  final product = suggestion as Map<String,dynamic>;
+                  final product = suggestion as Map<String, dynamic>;
 
                   setState(() {
 
@@ -236,18 +230,17 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                     orderProducts[index]['product_name'] = product['name'];
 
                   });
-
                 },
 
               ),
             ),
 
-            const SizedBox(width:10),
+            const SizedBox(width: 10),
 
             /// QUANTITY
             Expanded(
 
-              flex:2,
+              flex: 2,
 
               child: TextField(
 
@@ -261,28 +254,21 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
                 ),
 
               ),
-
             ),
 
-            /// DELETE
+            /// DELETE BUTTON
             IconButton(
 
-              icon: const Icon(Icons.delete,color: Colors.red),
+              icon: const Icon(Icons.delete, color: Colors.red),
 
-              onPressed: (){
-                removeProductRow(index);
-              },
+              onPressed: () => removeProductRow(index),
 
             )
 
           ],
-
         ),
-
       ),
-
     );
-
   }
 
   @override
@@ -298,150 +284,137 @@ class _AddOrderScreenState extends State<AddOrderScreen> {
 
       body: SingleChildScrollView(
 
-        child: Padding(
+        padding: const EdgeInsets.all(16),
 
-          padding: const EdgeInsets.all(16),
+        child: Column(
 
-          child: Column(
+          children: [
 
-            children: [
+            /// CUSTOMER DETAILS
+            Card(
 
-              /// CUSTOMER CARD
-              Card(
+              elevation: 4,
 
-                elevation: 4,
+              child: Padding(
 
-                child: Padding(
+                padding: const EdgeInsets.all(16),
 
-                  padding: const EdgeInsets.all(16),
+                child: Column(
 
-                  child: Column(
+                  children: [
 
-                    children: [
-
-                      TextField(
-                        controller: customerName,
-                        decoration: const InputDecoration(
-                          labelText: "Customer Name",
-                          prefixIcon: Icon(Icons.person),
-                        ),
+                    TextField(
+                      controller: customerName,
+                      decoration: const InputDecoration(
+                        labelText: "Customer Name",
+                        prefixIcon: Icon(Icons.person),
                       ),
+                    ),
 
-                      const SizedBox(height:15),
+                    const SizedBox(height: 15),
 
-                      TextField(
-                        controller: mobile,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: "Mobile Number",
-                          prefixIcon: Icon(Icons.phone),
-                        ),
+                    TextField(
+                      controller: mobile,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: "Mobile Number",
+                        prefixIcon: Icon(Icons.phone),
                       ),
+                    ),
 
-                      const SizedBox(height:15),
+                    const SizedBox(height: 15),
 
-                      TextField(
-                        controller: city,
-                        decoration: const InputDecoration(
-                          labelText: "City",
-                          prefixIcon: Icon(Icons.location_city),
-                        ),
+                    TextField(
+                      controller: city,
+                      decoration: const InputDecoration(
+                        labelText: "Address",
+                        prefixIcon: Icon(Icons.location_city),
                       ),
+                    ),
 
-                    ],
-
-                  ),
-
-                ),
-
-              ),
-
-              const SizedBox(height:20),
-
-              /// PRODUCTS TITLE
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  "Products",
-                  style: TextStyle(
-                      fontSize:18,
-                      fontWeight: FontWeight.bold
-                  ),
+                  ],
                 ),
               ),
+            ),
 
-              const SizedBox(height:10),
+            const SizedBox(height: 20),
 
-              /// PRODUCT ROWS
-              Column(
-                children: List.generate(
-                    orderProducts.length,
-                        (index)=>productRow(index)
-                ),
+            /// PRODUCTS TITLE
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Products",
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            /// PRODUCT LIST
+            Column(
+              children: List.generate(
+                orderProducts.length,
+                    (index) => productRow(index),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            /// ADD PRODUCT BUTTON
+            ElevatedButton.icon(
+
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
               ),
 
-              const SizedBox(height:10),
+              onPressed: addProductRow,
 
-              /// ADD PRODUCT BUTTON
-              ElevatedButton.icon(
+              icon: const Icon(Icons.add),
+
+              label: const Text("Add Another Product"),
+            ),
+
+            const SizedBox(height: 25),
+
+            /// SUBMIT BUTTON
+            SizedBox(
+
+              width: double.infinity,
+
+              height: 50,
+
+              child: ElevatedButton(
 
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor: const Color(0xffb76e79),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
 
-                onPressed: addProductRow,
+                onPressed: loading
+                    ? null
+                    : () {
+                  FocusScope.of(context).unfocus();
+                  createOrder();
+                },
 
-                icon: const Icon(Icons.add),
-
-                label: const Text("Add Another Product"),
-
+                child: loading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                  "Submit Order",
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold),
+                ),
               ),
+            )
 
-              const SizedBox(height:25),
-
-              /// SUBMIT BUTTON
-              SizedBox(
-
-                width: double.infinity,
-
-                height: 50,
-
-                child: ElevatedButton(
-
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xffb76e79),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-
-                  onPressed: loading ? null : () async {
-
-                    FocusScope.of(context).unfocus();
-                    await createOrder();
-
-                  },
-
-                  child: loading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                    "Submit Order",
-                    style: TextStyle(fontSize:16,fontWeight: FontWeight.bold),
-                  ),
-                )
-
-              )
-
-            ],
-
-          ),
-
+          ],
         ),
-
       ),
-
     );
-
   }
-
 }
